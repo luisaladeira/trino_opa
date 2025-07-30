@@ -64,3 +64,12 @@ filtered_columns contains column if {
     column_name in restricted
     column := column_name
 }
+
+# Batch endpoint for filtering resources (used by Trino for SHOW commands)
+# Returns indices of allowed resources based on user permissions
+batch := [ i |
+    some i
+    input.action.filterResources[i]
+    user := input.context.identity.user
+    data.users[user]  # User must exist in our database
+]
