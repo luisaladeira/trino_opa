@@ -1,0 +1,79 @@
+{
+    "users": {
+        "admin": {
+            "role": "admin",
+            "name": "Administrator",
+            "email": "admin@company.com"
+        },
+        "alice": {
+            "role": "analyst",
+            "name": "Alice Johnson",
+            "email": "alice@company.com",
+            "department": "analytics"
+        },
+        "bob": {
+            "role": "engineer",
+            "name": "Bob Smith",
+            "email": "bob@company.com",
+            "department": "engineering"
+        },
+        "charlie": {
+            "role": "analyst",
+            "name": "Charlie Brown",
+            "email": "charlie@company.com",
+            "department": "analytics"
+        }
+    },
+    "roles": {
+        "admin": {
+            "permissions": [
+                "*"
+            ]
+        },
+        "engineer": {
+            "permissions": [
+                "SELECT",
+                "INSERT",
+                "UPDATE",
+                "CREATE_TABLE",
+                "DROP_TABLE",
+                "ExecuteQuery",
+                "ShowCatalogs",
+                "ShowSchemas",
+                "ShowTables",
+                "ShowColumns",
+                "FilterCatalogs",
+                "FilterSchemas",
+                "FilterTables",
+                "AccessCatalog",
+                "ReadCatalog",
+                "SelectFromColumns",
+                "CanExecuteQuery",
+                "CanAccessCatalog"
+            ]
+        },
+        "analyst": {
+            "permissions": [
+                "SELECT",
+                "ExecuteQuery",
+                "ShowCatalogs",
+                "ShowSchemas",
+                "ShowTables",
+                "ShowColumns",
+                "FilterCatalogs",
+                "FilterSchemas",
+                "FilterTables",
+                "AccessCatalog",
+                "ReadCatalog",
+                "SelectFromColumns",
+                "CanExecuteQuery",
+                "CanAccessCatalog"
+            ],
+            "restricted_columns": [
+                "ssn",
+                "credit_card",
+                "password"
+            ]
+        }
+    }
+}

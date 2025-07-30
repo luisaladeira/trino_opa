@@ -1,0 +1,113 @@
+services:
+  # Open Policy Agent
+  opa:
+    image: openpolicyagent/opa:latest-envoy
+    container_name: trino-opa
+    platform: linux/amd64
+    ports:
+      - "8181:8181"
+    command:
+      - "run"
+      - "--server"
+      - "--addr=0.0.0.0:8181"
+      - "--log-level=debug"
+      - "/policies"
+      - "/data"
+    volumes:
+      - ./opa/policies:/policies
+      - ./opa/data:/data
+    working_dir: /
+    networks:
+      - trino-network
+
+  # Trino Coordinator
+  trino-coordinator:
+    image: trinodb/trino:latest
+    container_name: trino-coordinator
+    platform: linux/amd64
+    ports:
+      - "8080:8080"
+    environment:
+      - JAVA_TOOL_OPTIONS=-Xmx2G
+    volumes:
+      - ./trino/coordinator:/etc/trino
+      - ./trino/catalog:/etc/trino/catalog
+    depends_on:
+      - opa
+    networks:
+      - trino-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8080/v1/info || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # Trino Worker
+  trino-worker:
+    image: trinodb/trino:latest
+    container_name: trino-worker
+    platform: linux/amd64
+    environment:
+      - JAVA_TOOL_OPTIONS=-Xmx2G
+    volumes:
+      - ./trino/worker:/etc/trino
+      - ./trino/catalog:/etc/trino/catalog
+    depends_on:
+      - trino-coordinator
+    networks:
+      - trino-network
+
+  # PostgreSQL para dados de exemplo
+  postgres:
+    image: postgres:13
+    container_name: trino-postgres
+    environment:
+      POSTGRES_DB: example
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./data/init.sql:/docker-entrypoint-initdb.d/init.sql
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - trino-network
+
+  # Apache Superset
+  superset:
+    image: apache/superset:latest
+    container_name: trino-superset
+    platform: linux/amd64
+    ports:
+      - "8088:8088"
+    environment:
+      - SUPERSET_CONFIG_PATH=/app/superset_config.py
+    volumes:
+      - ./superset/superset_config.py:/app/superset_config.py
+      - superset_data:/app/superset_home
+    depends_on:
+      - trino-coordinator
+      - postgres
+    networks:
+      - trino-network
+    command: >
+      bash -c "
+        echo 'Instalando driver básico do Trino...' &&
+        pip install trino sqlalchemy-trino --no-cache-dir &&
+        echo 'Driver instalado!' &&
+        pip list | grep -i trino &&
+        echo 'Configurando Superset...' &&
+        superset fab create-admin --username admin --firstname Admin --lastname User --email admin@trino.local --password admin &&
+        superset db upgrade &&
+        superset init &&
+        echo 'Superset pronto! Iniciando servidor...' &&
+        superset run -h 0.0.0.0 -p 8088
+      "
+
+networks:
+  trino-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  superset_data:
