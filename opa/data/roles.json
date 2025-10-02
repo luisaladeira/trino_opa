@@ -1,0 +1,40 @@
+{
+    "roles": {
+        "admin": {
+            "permissions": [
+                "*"
+            ]
+        },
+        "read": {
+            "permissions": [
+                "SELECT",
+                "ExecuteQuery",
+                "ShowCatalogs",
+                "ShowSchemas",
+                "ShowTables",
+                "ShowColumns",
+                "FilterCatalogs",
+                "FilterSchemas",
+                "FilterTables",
+                "AccessCatalog",
+                "ReadCatalog",
+                "SelectFromColumns",
+                "CanExecuteQuery",
+                "CanAccessCatalog"
+            ]
+        },
+        "write": {
+            "permissions": [
+                "INSERT",
+                "UPDATE",
+                "CREATE_TABLE",
+                "DROP_TABLE",
+                "AccessCatalog",
+                "ReadCatalog",
+                "SelectFromColumns",
+                "CanExecuteQuery",
+                "CanAccessCatalog"
+            ]
+        }
+    }
+}

@@ -1,0 +1,230 @@
+package trino
+
+import data
+
+default allow := false
+default row_filter = null
+default batch = []
+
+#
+# Centraliza contexto de acesso
+#
+get_context(inp) = ctx if {
+    schema := inp.action.resource.table.schemaName
+    table := inp.action.resource.table.tableName
+    table_key := sprintf("%s.%s", [schema, table])
+
+    not data.assets.mapping[table_key]  # contrato não encontrado
+    ctx := {
+        "user": inp.context.identity.user,
+        "table_key": table_key,
+        "contract": null,
+        "restricted": null,
+        "role": "",
+        "all_cols": []
+    }
+}
+get_context(inp) = ctx if {
+    schema := inp.action.resource.table.schemaName
+    table := inp.action.resource.table.tableName
+    table_key := sprintf("%s.%s", [schema, table])
+
+    contract_name := data.assets.mapping[table_key]
+    contract := data.contracts[contract_name]
+    restricted := contract.contract.tables[table_key].restricted
+    user := inp.context.identity.user
+    role := get_user_role(user, contract)
+    all_cols := inp.action.resource.table.columns
+
+    ctx := {
+        "user": user,
+        "table_key": table_key,
+        "contract": contract,
+        "restricted": restricted,
+        "role": role,
+        "all_cols": all_cols
+    }
+}
+
+#
+# Determina o papel do usuário
+#
+get_user_role(user, contract) = "admin" if {
+    user_in_teams(user, contract.permissions.owner)
+}
+get_user_role(user, contract) = "write" if {
+    not user_in_teams(user, contract.permissions.owner)
+    user_in_teams(user, contract.permissions.write)
+}
+get_user_role(user, contract) = "read_general" if {
+    not user_in_teams(user, contract.permissions.owner)
+    not user_in_teams(user, contract.permissions.write)
+    user_in_any_read_team(user, contract.permissions.read.general)
+}
+get_user_role(user, contract) = "read_pii" if {
+    not user_in_teams(user, contract.permissions.owner)
+    not user_in_teams(user, contract.permissions.write)
+    not user_in_any_read_team(user, contract.permissions.read.general)
+    user_in_any_read_team(user, contract.permissions.read.pii)
+}
+get_user_role(user, contract) = "read_3p" if {
+    not user_in_teams(user, contract.permissions.owner)
+    not user_in_teams(user, contract.permissions.write)
+    not user_in_any_read_team(user, contract.permissions.read.general)
+    not user_in_any_read_team(user, contract.permissions.read.pii)
+    user_in_any_read_team(user, contract.permissions.read["3p"])
+}
+get_user_role(user, contract) = "" if {
+    not user_in_teams(user, contract.permissions.owner)
+    not user_in_teams(user, contract.permissions.write)
+    not user_in_any_read_team(user, contract.permissions.read.general)
+    not user_in_any_read_team(user, contract.permissions.read.pii)
+    not user_in_any_read_team(user, contract.permissions.read["3p"])
+}
+
+#
+# Funções auxiliares para checar times
+#
+user_in_teams(user, teams) if {
+    some t1
+    tval := teams[t1]
+    some m1
+    mval := tval[m1]
+    user == mval
+}
+user_in_any_read_team(user, read_teams) if {
+    some t2
+    tval2 := read_teams[t2]
+    some m2
+    mval2 := tval2[m2]
+    user == mval2
+}
+
+#
+# Decisão de acesso
+#
+allow if {
+    ctx := get_context(input)
+    ctx.role != ""
+}
+
+#
+# Column-Level Security (PII) usando ctx
+# Admin/owner sempre vê todas as colunas
+#
+filter_columns(ctx) = allowed_cols if {
+    ctx.role == "admin"
+    allowed_cols := ctx.all_cols
+}
+filter_columns(ctx) = allowed_cols if {
+    ctx.restricted != null
+    ctx.role != "admin"
+    allowed_cols := [col |
+        some i
+        i >= 0
+        i < count(ctx.all_cols)
+        col := ctx.all_cols[i]
+        is_col_allowed(ctx.role, col, ctx.restricted)
+    ]
+}
+filter_columns(ctx) = [] if {
+    ctx.restricted == null
+    ctx.role != "admin"
+}
+
+is_col_allowed(role, col, restricted) = true if {
+    role == "admin"
+}
+is_col_allowed(role, col, restricted) = true if {
+    role == "read_pii"
+}
+is_col_allowed(role, col, restricted) = true if {
+    role == "write"
+}
+is_col_allowed(role, col, restricted) = true if {
+    role == "read_general"
+    not is_pii_col(col, restricted)
+}
+is_col_allowed(role, col, restricted) = true if {
+    role == "read_3p"
+    not is_pii_col(col, restricted)
+}
+is_col_allowed(role, col, restricted) = false if {
+    is_pii_col(col, restricted)
+    role != "admin"
+    role != "read_pii"
+    role != "write"
+}
+
+is_pii_col(col, restricted) = true if {
+    restricted != null
+    restricted.pii != null
+    some idx
+    idx >= 0
+    idx < count(restricted.pii)
+    restricted.pii[idx] == col
+}
+is_pii_col(_, restricted) = false if {
+    restricted == null
+}
+is_pii_col(_, restricted) = false if {
+    restricted.pii == null
+}
+
+#
+# Row-Level Security (3p)
+#
+row_filter = filters if {
+    ctx := get_context(input)
+    ctx.restricted != null
+    restricted_3p := ctx.restricted["3p"]
+    count(restricted_3p) > 0
+    ctx.role != "admin"
+    ctx.role != "read_3p"
+    filters := [ {"column": col, "value": false} | some i; col := restricted_3p[i] ]
+}
+row_filter = [] if {
+    ctx := get_context(input)
+    ctx.restricted == null
+}
+
+#
+# Permissões SQL usando role_mapping e fallback para admin
+#
+get_sql_role(role) = real_role if {
+    data.roles.role_mapping[role] != null
+    real_role := data.roles.role_mapping[role]
+}
+get_sql_role(role) = role if {
+    data.roles.role_mapping[role] == null
+}
+
+permissions(ctx) = perms if {
+    ctx.role == "admin"
+    perms := ["*"]  # garante acesso total para admin
+}
+permissions(ctx) = perms if {
+    ctx.role != "admin"
+    real_role := get_sql_role(ctx.role)
+    perms := data.roles[real_role].permissions
+}
+
+#
+# Batch endpoint para Trino - retorna index, columns, permissions e allow
+#
+batch = result if {
+    result := [o |
+        some i
+        resource := input.action.filterResources[i]
+        ctx := get_context({"context": input.context, "action": {"operation": input.action.operation, "resource": resource}})
+        allow_val := allow with input as {"context": input.context, "action": {"operation": input.action.operation, "resource": resource}}
+        allowed_cols := filter_columns(ctx)
+        perms := permissions(ctx)
+        o := {
+            "index": i,
+            "columns": allowed_cols,
+            "permissions": perms,
+            "allow": allow_val
+        }
+    ]
+}

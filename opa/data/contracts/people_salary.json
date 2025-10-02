@@ -1,0 +1,37 @@
+{
+    "contract": {
+        "tables": {
+            "public.users": {
+                "restricted": {
+                    "pii": [
+                        "ssn",
+                        "credit_card",
+                        "password"
+                    ],
+                    "3p": "address"
+                }
+            },
+            "public.sales": {
+                "restricted": {
+                    "pii": [],
+                    "3p": []
+                }
+            }
+        }
+    },
+    "permissions": {
+        "read": {
+            "general": [
+                "people_general"
+            ],
+            "pii": [
+                "people"
+            ],
+            "3p": []
+        },
+        "owner": [
+            "people"
+        ],
+        "write": []
+    }
+}
